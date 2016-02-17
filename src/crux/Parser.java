@@ -193,23 +193,6 @@ public class Parser {
         exitRule(NonTerminal.LITERAL);
         return expr;
     }
-
-
-    
-    /*// literal := INTEGER | FLOAT | TRUE | FALSE .
-    public void literal()
-    {
-    	enterRule(NonTerminal.LITERAL);
-    	if(this.currentToken.kind == Token.Kind.INTEGER)
-    		expect(Token.Kind.INTEGER);
-    	else if(this.currentToken.kind == Token.Kind.FLOAT)
-    		expect(Token.Kind.FLOAT);
-    	else if(this.currentToken.kind == Token.Kind.TRUE)
-    		expect(Token.Kind.TRUE);
-    	else if(this.currentToken.kind == Token.Kind.FALSE)
-    		expect(Token.Kind.FALSE);
-    	exitRule(NonTerminal.LITERAL);
-    } */
     
     // designator := IDENTIFIER { "[" expression0 "]" } .
     public void designator()
@@ -237,18 +220,13 @@ public class Parser {
     
     //declaration-list := { declaration } .
     private Declaration declerationList() {
-    	
 		while(this.currentToken.kind == Token.Kind.VAR || this.currentToken.kind == Token.Kind.ARRAY || this.currentToken.kind == Token.Kind.FUNC)
 			return decleration();
-	
 		return decleration();
-		
 	}
 
     //declaration := variable-declaration | array-declaration | function-definition .
 	private Declaration decleration() {
-	
-		
 	/*	if(this.currentToken.kind == Token.Kind.VAR){
 			variableDeclaration();
 		}
@@ -270,51 +248,40 @@ public class Parser {
 		
 		expect(Token.Kind.FUNC);
 		Token token = expectRetrieve(Token.Kind.IDENTIFIER);
-		Symbol s = tryDeclareSymbol(token);
-		tryResolveSymbol(token);
+		tryDeclareSymbol(token);
+		Symbol s = tryResolveSymbol(token);
 		this.symbolTable.createScope();
 		expect(Token.Kind.OPEN_PAREN);
-		paramerterList();
+		//get the arguments from the paramater 
+		List<Symbol> args = paramerterList();
 		expect(Token.Kind.CLOSE_PAREN);
 		expect(Token.Kind.COLON);
 		type();
-		statementBlock();
-		/*remove later, hardcoded for testing*/
-		StatementList body = new StatementList(1,1);
-		List<Symbol> args = new ArrayList<Symbol>();
-		ast.FunctionDefinition fd = new ast.FunctionDefinition(token.lineNumber(), token.charPosition(), s, args, body);
+		ast.StatementList body = statementBlock();
+		ast.FunctionDefinition fd = new ast.FunctionDefinition(token.lineNumber(), token.charPosition(), s , args, body);
 		this.symbolTable.exitScope();
 		return fd;
 		
 	}
 
 	//statement-block := "{" statement-list "}"
-	private void statementBlock() {
-		// TODO Auto-generated method stub
-		enterRule(NonTerminal.STATEMENT_BLOCK);
+	private ast.StatementList statementBlock() {
 		expect(Token.Kind.OPEN_BRACE);
-	
-		statementList();
+		ast.StatementList statementList = statementList();
 		expect(Token.Kind.CLOSE_BRACE);
-
-		exitRule(NonTerminal.STATEMENT_BLOCK);
-		
+		return statementList;
 	}
 
 	//statement-list := { statement } .
-	private void statementList() {
-		// TODO Auto-generated method stub
-
-		enterRule(NonTerminal.STATEMENT_LIST);
-		statement();
-		//System.out.println(this.parseTreeReport());
+	private ast.StatementList statementList() {
+		ast.StatementList slist = new ast.StatementList(this.currentToken.lineNumber(), this.currentToken.charPosition());
+		slist.add(statement());
+		
 		while(this.currentToken.kind != Token.Kind.CLOSE_BRACE){
-			//System.out.println(this.parseTreeReport());
-			statement();
-			
+			slist.add(statement());
 		}
 
-		exitRule(NonTerminal.STATEMENT_LIST);
+		return slist;
 		
 	}
 
@@ -324,36 +291,34 @@ public class Parser {
            | if-statement
            | while-statement
            | return-statement . */
-	private void statement() {
-		// TODO Auto-generated method stub
-		enterRule(NonTerminal.STATEMENT);
-		if(this.currentToken.kind == Token.Kind.VAR)
-			this.variableDeclaration();
-		else if(this.currentToken.kind == Token.Kind.CALL)
-			this.callStatement();
-		else if(this.currentToken.kind == Token.Kind.LET)
-			this.assignmentStatement();
+	private ast.Statement statement() {
+
+	/*	if(this.currentToken.kind == Token.Kind.VAR)
+			return this.variableDeclaration();*/
+	   if(this.currentToken.kind == Token.Kind.CALL)
+			return this.callStatement();
+		/*else if(this.currentToken.kind == Token.Kind.LET)
+			return this.assignmentStatement();
 		else if(this.currentToken.kind == Token.Kind.IF)
-			this.ifStatement();
+			return this.ifStatement();
 		else if(this.currentToken.kind == Token.Kind.WHILE)
-			this.whileStatement();
+			return this.whileStatement();
 		else if(this.currentToken.kind == Token.Kind.RETURN)
-			this.returnStatement();
+			return this.returnStatement();*/
 		else{
 			String errorMessage = reportSyntaxError(Token.Kind.CLOSE_BRACE);
 	        throw new QuitParseException(errorMessage);
 		}
 		
-		exitRule(NonTerminal.STATEMENT);
+	
 		
 	}
 
-	private void callStatement() {
+	private ast.Call callStatement() {
 		//call-statement := call-expression ";"
-		enterRule(NonTerminal.CALL_STATEMENT);
-		this.callExpression();
+		ast.Call call =  this.callExpression();
 		expect(Token.Kind.SEMICOLON);
-		exitRule(NonTerminal.CALL_STATEMENT);
+		return call;
 	}
 
 	//return-statement := "return" expression0 ";" .
@@ -411,21 +376,25 @@ public class Parser {
 		
 	}
 	//parameter-list := [ parameter { "," parameter } ] .
-	private void paramerterList() {
-
+	private List<Symbol> paramerterList() {
+		List<Symbol> args = new ArrayList<Symbol>();
+		
 		if(currentToken.kind != Token.Kind.CLOSE_PAREN){
-			parameter();
+			args.add(parameter());
 			while(accept(Token.Kind.COMMA))
-				parameter();
+				args.add(parameter());
 		}
+		
+		return args;
 	}
 
 	//parameter := IDENTIFIER ":" type .
-	private void parameter() {
-		
-		tryDeclareSymbol(expectRetrieve(Token.Kind.IDENTIFIER));
+	private  Symbol parameter() {
+		//get the symbol and return it
+		Symbol s = tryDeclareSymbol(expectRetrieve(Token.Kind.IDENTIFIER));
 		expect(Token.Kind.COLON);
 		type();
+		return s;
 	}
 
 	//array-declaration := "array" IDENTIFIER ":" type "[" INTEGER "]" { "[" INTEGER "]" } ";"
@@ -459,18 +428,18 @@ public class Parser {
 
 	/*expression0 := expression1 [ op0 expression1 ] .
 	*/
-	private void expression0() {
-
-		enterRule(NonTerminal.EXPRESSION0);
-		expression1();
+	private ExpressionList expression0() {
+		ast.ExpressionList sl = new ast.ExpressionList(this.currentToken.lineNumber(), this.currentToken.charPosition());
+		for (ast.Expression x : expression1())
+			sl.add(x);
 		if(this.currentToken.kind != Token.Kind.SEMICOLON){
 			if(NonTerminal.OP0.firstSet().contains(this.currentToken.kind)){
 				op0();
-				expression1();
+				for (ast.Expression x : expression1())
+					sl.add(x);
 			}
 		}
-		exitRule(NonTerminal.EXPRESSION0);
-		//System.out.println(this.parseTreeReport());
+		return sl;
 	}
 
 	//op0 := ">=" | "<=" | "!=" | "==" | ">" | "<" .
@@ -482,14 +451,18 @@ public class Parser {
 	}
 
 	//expression1 := expression2 { op1  expression2 } .
-	private void expression1() {
-		enterRule(NonTerminal.EXPRESSION1);
-		expression2();
+	private ast.ExpressionList expression1() {
+		ast.ExpressionList el = new ast.ExpressionList(this.currentToken.lineNumber(), this.currentToken.charPosition());
+	
+		for (ast.Expression x : expression2())
+			el.add(x);
 		while(NonTerminal.OP1.firstSet().contains(this.currentToken.kind)){
 			op1();
-			expression2();
+			for (ast.Expression x : expression2())
+				el.add(x);
 		}
-		exitRule(NonTerminal.EXPRESSION1);
+		
+		return el;
 	}
 
 	//op1 := "+" | "-" | "or" .
@@ -501,15 +474,14 @@ public class Parser {
 	}
 
 	//expression2 := expression3 { op2 expression3 } .
-	private void expression2() {
-		enterRule(NonTerminal.EXPRESSION2);
-		expression3();
+	private ast.ExpressionList expression2() {
+		ast.ExpressionList el = new ast.ExpressionList(this.currentToken.lineNumber(), this.currentToken.charPosition());
+		el.add(expression3());
 		while(NonTerminal.OP2.firstSet().contains(this.currentToken.kind())){
 			op2();
-			expression3();
-		}
-		
-		exitRule(NonTerminal.EXPRESSION2);
+			el.add(expression3());
+		}	
+		return el;
 	}
 	
 	//op2 := "*" | "/" | "and" 
@@ -525,26 +497,22 @@ public class Parser {
 		       | designator
 		       | call-expression
 		       | literal . */
-	private void expression3() {
-		enterRule(NonTerminal.EXPRESSION3);
-		
+	private Expression expression3() {		
 		if(this.currentToken.kind == Token.Kind.NOT){
 			expect(Token.Kind.NOT);
-			expression3();
+			return expression3();
 		}
-		else if(this.currentToken.kind == Token.Kind.OPEN_PAREN){
+	/*	else if(this.currentToken.kind == Token.Kind.OPEN_PAREN){
 			expect(Token.Kind.OPEN_PAREN);
 			expression0();
 			expect(Token.Kind.CLOSE_PAREN);
 		}else if(this.currentToken.kind == Token.Kind.IDENTIFIER){
 			designator();
-		}else if(this.currentToken.kind == Token.Kind.CALL){
-			callExpression();
-		}else if(isLiteral()){
-			literal();
-		}
-		exitRule(NonTerminal.EXPRESSION3);
-		//System.out.println(this.parseTreeReport());
+		}*/else if(this.currentToken.kind == Token.Kind.CALL){
+			return callExpression();
+		}else/*(isLiteral()){*/
+			return literal();
+		//}
 	}		
 
 	private boolean isLiteral() {
@@ -556,27 +524,28 @@ public class Parser {
 	}
 
 	//call-expression := "::" IDENTIFIER "(" expression-list ")" .
-	private void callExpression() {
-		enterRule(NonTerminal.CALL_EXPRESSION);
+	private ast.Call callExpression() {
 		expect(Token.Kind.CALL);
-		tryResolveSymbol(expectRetrieve(Token.Kind.IDENTIFIER));
+		Symbol sym = tryResolveSymbol(expectRetrieve(Token.Kind.IDENTIFIER));
 		expect(Token.Kind.OPEN_PAREN);
-		expressionList();
+		ast.ExpressionList args = expressionList();
 		expect(Token.Kind.CLOSE_PAREN);
-		exitRule(NonTerminal.CALL_EXPRESSION);
+		return  new ast.Call(this.currentToken.lineNumber(), this.currentToken.charPosition(), sym, args);
 		
 	}
 
-	private void expressionList() {
-		enterRule(NonTerminal.EXPRESSION_LIST);
+	private ast.ExpressionList expressionList() {
 		//expression-list := [ expression0 { "," expression0 } ] .
+		ast.ExpressionList expressionList = new ast.ExpressionList(this.currentToken.lineNumber(), this.currentToken.charPosition());
 		if(NonTerminal.EXPRESSION0.firstSet.contains(this.currentToken.kind)){
-			this.expression0();
+			for (ast.Expression x : expression0())
+				expressionList.add(x);
 			while(accept(Token.Kind.COMMA)){
-				expression0();
+				for (ast.Expression x : expression0())
+					expressionList.add(x);
 			}
 		}
-		exitRule(NonTerminal.EXPRESSION_LIST);
+		return expressionList;
 	}
     
 

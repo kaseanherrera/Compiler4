@@ -138,7 +138,7 @@ public class Scanner implements Iterable<Token> {
 			//return new Token("EOF", this.lineNum, this.charPos);
 		}
 		
-		Token T = new Token(lastMatch, this.lineNum, this.charPos);
+		Token T = new Token(lastMatch, this.lineNum, this.charPos - lastMatch.length() + 1);
 		//reset last matched
 		lastMatch = "";
 		return T;
