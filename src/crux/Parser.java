@@ -184,56 +184,57 @@ public class Parser {
     // literal := INTEGER | FLOAT | TRUE | FALSE .
     public ast.Expression literal()
     {
-        ast.Expression expr;
+    	Expression exp;
+
         enterRule(NonTerminal.LITERAL);
         
         Token tok = expectRetrieve(NonTerminal.LITERAL);
-        expr = Command.newLiteral(tok);
+        exp = Command.newLiteral(tok);
         
         exitRule(NonTerminal.LITERAL);
-        return expr;
+        return exp;
     }
     
     // designator := IDENTIFIER { "[" expression0 "]" } .
-    public void designator()
+    public ast.Expression designator()
     {
-        enterRule(NonTerminal.DESIGNATOR);
-
-        expect(Token.Kind.IDENTIFIER);
+    	Token t = expectRetrieve(Token.Kind.IDENTIFIER);
+    	Symbol sym = tryResolveSymbol(t);
+    	ast.Expression exp = new ast.AddressOf(t.lineNumber(), t.charPosition(), sym);
         while (accept(Token.Kind.OPEN_BRACKET)) {
-            expression0();
+            ast.Expression expression = expression0();
+            exp = new ast.Index(t.lineNumber(), t.charPosition(), exp, expression);
             expect(Token.Kind.CLOSE_BRACKET);
         }
+        return exp;
         
-        exitRule(NonTerminal.DESIGNATOR);
     } 
 
     //program := declaration-list EOF .
     public ast.DeclarationList program()
     {
     	//get the current line number and position 
-    	DeclarationList l = new DeclarationList(this.currentToken.lineNumber(),this.currentToken.charPosition());
-    	l.add(declerationList());
-        return l;
-
+    	return declerationList();
     } 
     
     //declaration-list := { declaration } .
-    private Declaration declerationList() {
+    private ast.DeclarationList declerationList() {
+    	ast.DeclarationList dl = new DeclarationList(this.currentToken.lineNumber(), this.charPosition() - this.currentToken.lexeme().length()+1);
+    	
 		while(this.currentToken.kind == Token.Kind.VAR || this.currentToken.kind == Token.Kind.ARRAY || this.currentToken.kind == Token.Kind.FUNC)
-			return decleration();
-		return decleration();
+			dl.add(decleration());
+		return dl;
 	}
 
     //declaration := variable-declaration | array-declaration | function-definition .
 	private Declaration decleration() {
-	/*	if(this.currentToken.kind == Token.Kind.VAR){
-			variableDeclaration();
+		if(this.currentToken.kind == Token.Kind.VAR){
+			return variableDeclaration();
 		}
 		else if(this.currentToken.kind == Token.Kind.ARRAY){
-			arrayDeclaration();
-		}*/
-	    if(this.currentToken.kind == Token.Kind.FUNC){
+			return arrayDeclaration();
+		}
+		else if(this.currentToken.kind == Token.Kind.FUNC){
 			return functionDefinition();
 		}else{
 			return functionDefinition();
@@ -275,9 +276,9 @@ public class Parser {
 	//statement-list := { statement } .
 	private ast.StatementList statementList() {
 		ast.StatementList slist = new ast.StatementList(this.currentToken.lineNumber(), this.currentToken.charPosition());
-		slist.add(statement());
 		
-		while(this.currentToken.kind != Token.Kind.CLOSE_BRACE){
+		
+		while(have(NonTerminal.STATEMENT)){
 			slist.add(statement());
 		}
 
@@ -293,18 +294,18 @@ public class Parser {
            | return-statement . */
 	private ast.Statement statement() {
 
-	/*	if(this.currentToken.kind == Token.Kind.VAR)
-			return this.variableDeclaration();*/
+	   if(this.currentToken.kind == Token.Kind.VAR)
+			return this.variableDeclaration();
 	   if(this.currentToken.kind == Token.Kind.CALL)
 			return this.callStatement();
-		/*else if(this.currentToken.kind == Token.Kind.LET)
+	   else if(this.currentToken.kind == Token.Kind.LET)
 			return this.assignmentStatement();
 		else if(this.currentToken.kind == Token.Kind.IF)
 			return this.ifStatement();
 		else if(this.currentToken.kind == Token.Kind.WHILE)
 			return this.whileStatement();
 		else if(this.currentToken.kind == Token.Kind.RETURN)
-			return this.returnStatement();*/
+			return this.returnStatement();
 		else{
 			String errorMessage = reportSyntaxError(Token.Kind.CLOSE_BRACE);
 	        throw new QuitParseException(errorMessage);
@@ -322,49 +323,58 @@ public class Parser {
 	}
 
 	//return-statement := "return" expression0 ";" .
-	private void returnStatement() {
+	private ast.Return returnStatement() {
 		enterRule(NonTerminal.RETURN_STATEMENT);
-		this.expect(Token.Kind.RETURN);
-		this.expression0();
+		Token t = expectRetrieve(Token.Kind.RETURN);
+		Expression arg = this.expression0();
 		this.expect(Token.Kind.SEMICOLON);
 		exitRule(NonTerminal.RETURN_STATEMENT);
-		
+		return new ast.Return(t.lineNumber(), t.charPosition(), arg);
 	}
 //while-statement := "while" expression0 statement-block .
-	private void whileStatement() {
+	private ast.WhileLoop whileStatement() {
 		enterRule(NonTerminal.WHILE_STATEMENT);
-		expect(Token.Kind.WHILE);
-		this.expression0();
-		statementBlock();
+		Token tok  = this.expectRetrieve(Token.Kind.WHILE);
+		Expression cond = this.expression0();
+		ast.StatementList body = statementBlock();
 		exitRule(NonTerminal.WHILE_STATEMENT);
-		
+		return new ast.WhileLoop(tok.lineNumber(), tok.charPosition(), cond, body);
 	}
 
 	//if-statement := "if" expression0 statement-block [ "else" statement-block ] .
-	private void ifStatement() {
+	private ast.IfElseBranch ifStatement() {
 		enterRule(NonTerminal.IF_STATEMENT);
 		expect(Token.Kind.IF);
-		expression0();
+		int lineNum = this.currentToken.lineNumber();
+		int charPos = this.currentToken.charPosition();
+		
+		ast.Expression cond = expression0();
 		this.symbolTable.createScope();
-		statementBlock();
+		ast.StatementList thenBlock = statementBlock();
+		ast.StatementList elseBlock;
 		this.symbolTable.exitScope();
 		if(accept(Token.Kind.ELSE)){
 			this.symbolTable.createScope();
-			statementBlock();
+			elseBlock = statementBlock();
 			this.symbolTable.exitScope();
+		}else{
+			elseBlock = new ast.StatementList(currentToken.lineNumber(), currentToken.charPosition());
 		}
 		exitRule(NonTerminal.IF_STATEMENT);
+		
+		return new ast.IfElseBranch(lineNum, charPos, cond, thenBlock, elseBlock);
 	}
 
 	//assignment-statement := "let" designator "=" expression0 ";"
-	private void assignmentStatement() {
+	private ast.Assignment assignmentStatement() {
 		enterRule(NonTerminal.ASSIGNMENT_STATEMENT);
-		expect(Token.Kind.LET);
-		designator();
+		Token nt = this.expectRetrieve(Token.Kind.LET);
+		Expression dest = designator();
 		expect(Token.Kind.ASSIGN);
-		expression0();
+		Expression source = expression0();
 		expect(Token.Kind.SEMICOLON);
 		exitRule(NonTerminal.ASSIGNMENT_STATEMENT);
+		return new ast.Assignment(nt.lineNumber(), nt.charPosition(), dest, source);
 		
 	}
 
@@ -398,13 +408,20 @@ public class Parser {
 	}
 
 	//array-declaration := "array" IDENTIFIER ":" type "[" INTEGER "]" { "[" INTEGER "]" } ";"
-	private void arrayDeclaration() {
+	private ast.ArrayDeclaration arrayDeclaration() {
+		
 		enterRule(NonTerminal.ARRAY_DECLARATION);
-		expect(Token.Kind.ARRAY);
-		expect(Token.Kind.IDENTIFIER);
+		Token arr = expectRetrieve(Token.Kind.ARRAY);
+		Token iden = expectRetrieve(Token.Kind.IDENTIFIER);
+		tryDeclareSymbol(iden);
+		Symbol sym = new Symbol(iden.lexeme());
+
+		ast.ArrayDeclaration array = new ast.ArrayDeclaration(arr.lineNumber(), arr.charPosition(), sym);
+		
 		expect(Token.Kind.COLON);
 		this.type();
 		expect(Token.Kind.OPEN_BRACKET);
+		
 		expect(Token.Kind.INTEGER);
 		expect(Token.Kind.CLOSE_BRACKET);
 		while(this.accept(Token.Kind.OPEN_BRACKET)){
@@ -414,81 +431,99 @@ public class Parser {
 		expect(Token.Kind.SEMICOLON);
 		exitRule(NonTerminal.ARRAY_DECLARATION);
 		
+		return array;
+		
 	}
 
 	//variable-declaration := "var" IDENTIFIER ":" type ";"
-	private void variableDeclaration() {
+	private ast.VariableDeclaration variableDeclaration() {
 		expect(Token.Kind.VAR);
 		Token t = expectRetrieve(Token.Kind.IDENTIFIER);
 		tryDeclareSymbol(t);
+		Symbol sym = tryResolveSymbol(t);
 		expect(Token.Kind.COLON);
 		type();
 		expect(Token.Kind.SEMICOLON);
+		ast.VariableDeclaration vd = new ast.VariableDeclaration(this.currentToken.lineNumber(), this.currentToken.charPosition(), sym);
+		return vd;
 	}
 
-	/*expression0 := expression1 [ op0 expression1 ] .
-	*/
-	private ExpressionList expression0() {
-		ast.ExpressionList sl = new ast.ExpressionList(this.currentToken.lineNumber(), this.currentToken.charPosition());
-		for (ast.Expression x : expression1())
-			sl.add(x);
+
+
+	private ast.Expression expression0() {
+		ast.Expression exp =  expression1();
 		if(this.currentToken.kind != Token.Kind.SEMICOLON){
-			if(NonTerminal.OP0.firstSet().contains(this.currentToken.kind)){
-				op0();
-				for (ast.Expression x : expression1())
-					sl.add(x);
+			if(have(NonTerminal.OP0)){
+				ast.Expression left = exp;
+				Token op  = op0();
+				ast.Expression right = expression1();
+				exp = ast.Command.newExpression(left, op, right);
 			}
 		}
-		return sl;
+		return exp;
 	}
-
+	
 	//op0 := ">=" | "<=" | "!=" | "==" | ">" | "<" .
-	private void op0() {
+	private Token  op0() {
 		enterRule(NonTerminal.OP0);
+		Token t = currentToken;
 		expect(currentToken.kind);
 		exitRule(NonTerminal.OP0);
+		return t;
 		
 	}
 
 	//expression1 := expression2 { op1  expression2 } .
-	private ast.ExpressionList expression1() {
-		ast.ExpressionList el = new ast.ExpressionList(this.currentToken.lineNumber(), this.currentToken.charPosition());
-	
-		for (ast.Expression x : expression2())
-			el.add(x);
-		while(NonTerminal.OP1.firstSet().contains(this.currentToken.kind)){
-			op1();
-			for (ast.Expression x : expression2())
-				el.add(x);
+	private ast.Expression expression1() {
+		ast.Expression exp = expression2();
+		while(have(NonTerminal.OP1)){
+			ast.Expression left = exp;
+			Token op = op1();
+			ast.Expression right = expression2();
+			exp = ast.Command.newExpression(left, op, right);
+			
 		}
 		
-		return el;
-	}
+		return exp;
+	} 
+	
+	
 
 	//op1 := "+" | "-" | "or" .
-	private void op1() {
+	private Token op1() {
+		ast.Expression e;
 		enterRule(NonTerminal.OP1);
+		Token t = this.currentToken;
 		expect(this.currentToken.kind());
 		exitRule(NonTerminal.OP1);
+		return t;
 		
 	}
 
 	//expression2 := expression3 { op2 expression3 } .
-	private ast.ExpressionList expression2() {
-		ast.ExpressionList el = new ast.ExpressionList(this.currentToken.lineNumber(), this.currentToken.charPosition());
-		el.add(expression3());
-		while(NonTerminal.OP2.firstSet().contains(this.currentToken.kind())){
-			op2();
-			el.add(expression3());
+	private ast.Expression expression2() {
+		ast.Expression exp = expression3();
+		
+		
+		while(have(NonTerminal.OP2)){
+			ast.Expression left = exp;
+			Token op = op2();
+			Expression right = expression3();
+			exp = ast.Command.newExpression(left, op, right);
 		}	
-		return el;
+		return exp;
 	}
 	
+	
+
+	
 	//op2 := "*" | "/" | "and" 
-	private void op2() {
+	private Token op2() {
 		enterRule(NonTerminal.OP2);
+		Token k = this.currentToken;
 		expect(this.currentToken.kind());
 		exitRule(NonTerminal.OP2);
+		return k;
 		
 	}
 
@@ -497,22 +532,34 @@ public class Parser {
 		       | designator
 		       | call-expression
 		       | literal . */
-	private Expression expression3() {		
-		if(this.currentToken.kind == Token.Kind.NOT){
-			expect(Token.Kind.NOT);
-			return expression3();
+	private ast.Expression expression3() {	
+
+		
+		ast.Expression expression;
+	
+		if(this.currentToken.lexeme().equals("not")){
+			Token tok = expectRetrieve(Token.Kind.NOT);
+			Expression right = expression3();
+			expression = Command.newExpression(right, tok, null);
 		}
-	/*	else if(this.currentToken.kind == Token.Kind.OPEN_PAREN){
+		else if(this.currentToken.kind == Token.Kind.OPEN_PAREN){
 			expect(Token.Kind.OPEN_PAREN);
-			expression0();
+			expression = expression0();
 			expect(Token.Kind.CLOSE_PAREN);
+			
 		}else if(this.currentToken.kind == Token.Kind.IDENTIFIER){
-			designator();
-		}*/else if(this.currentToken.kind == Token.Kind.CALL){
-			return callExpression();
-		}else/*(isLiteral()){*/
-			return literal();
-		//}
+			Expression d =  designator();
+			expression = new ast.Dereference(this.currentToken.lineNumber(), this.currentToken.charPosition(), d);
+		}else if(this.currentToken.kind == Token.Kind.CALL){
+			expression = callExpression();
+		}else if (isLiteral()){
+			expression = literal();
+		}else {
+			throw new QuitParseException(reportSyntaxError(NonTerminal.EXPRESSION3));
+		}
+		
+		return expression;
+		
 	}		
 
 	private boolean isLiteral() {
@@ -525,11 +572,13 @@ public class Parser {
 
 	//call-expression := "::" IDENTIFIER "(" expression-list ")" .
 	private ast.Call callExpression() {
+		
 		expect(Token.Kind.CALL);
 		Symbol sym = tryResolveSymbol(expectRetrieve(Token.Kind.IDENTIFIER));
 		expect(Token.Kind.OPEN_PAREN);
 		ast.ExpressionList args = expressionList();
 		expect(Token.Kind.CLOSE_PAREN);
+	
 		return  new ast.Call(this.currentToken.lineNumber(), this.currentToken.charPosition(), sym, args);
 		
 	}
@@ -537,12 +586,10 @@ public class Parser {
 	private ast.ExpressionList expressionList() {
 		//expression-list := [ expression0 { "," expression0 } ] .
 		ast.ExpressionList expressionList = new ast.ExpressionList(this.currentToken.lineNumber(), this.currentToken.charPosition());
-		if(NonTerminal.EXPRESSION0.firstSet.contains(this.currentToken.kind)){
-			for (ast.Expression x : expression0())
-				expressionList.add(x);
+		if(NonTerminal.EXPRESSION0.firstSet.contains(this.currentToken.kind) || this.currentToken.lexeme().equals("not")){
+			expressionList.add(expression0());
 			while(accept(Token.Kind.COMMA)){
-				for (ast.Expression x : expression0())
-					expressionList.add(x);
+				expressionList.add(expression0());
 			}
 		}
 		return expressionList;
